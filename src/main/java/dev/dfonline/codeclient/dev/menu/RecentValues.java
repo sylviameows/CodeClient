@@ -9,18 +9,16 @@ import dev.dfonline.codeclient.CodeClient;
 import dev.dfonline.codeclient.Feature;
 import dev.dfonline.codeclient.FileManager;
 import dev.dfonline.codeclient.config.Config;
+import dev.dfonline.codeclient.data.DFItem;
 import dev.dfonline.codeclient.location.Dev;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
-import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
-import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.minecraft.SharedConstants;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.ingame.GenericContainerScreen;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
+import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.sound.PositionedSoundInstance;
 import net.minecraft.datafixer.DataFixTypes;
 import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.StringNbtReader;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
@@ -28,7 +26,6 @@ import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.random.Random;
-import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -78,36 +75,37 @@ public class RecentValues extends Feature {
                 }
             });
         } catch (Exception err) {
-            CodeClient.LOGGER.error("Failed reading recent_values.json!");
-            err.printStackTrace();
+            CodeClient.LOGGER.error("Failed reading recent_values.json!", err);
         }
     }
 
     private JsonArray saveItems(List<ItemStack> list) {
         JsonArray out = new JsonArray();
 
+        if (CodeClient.MC.world == null) throw new RuntimeException("World is null!");
+
         for (ItemStack item : list) {
-            out.add(item.writeNbt(new NbtCompound()).asString());
+            out.add(item.toNbt(CodeClient.MC.world.getRegistryManager()).toString());
         }
 
         return out;
     }
 
     private ItemStack readItem(int version, JsonElement item) throws Exception {
-        return ItemStack.fromNbt(DataFixTypes.HOTBAR.update(CodeClient.MC.getDataFixer(), StringNbtReader.parse(item.getAsString()), version));
+        if (CodeClient.MC.world == null) return null;
+        var fromNbt = ItemStack.fromNbt(CodeClient.MC.world.getRegistryManager(), DataFixTypes.HOTBAR.update(CodeClient.MC.getDataFixer(), StringNbtReader.parse(item.getAsString()), version));
+        return fromNbt.orElse(null);
     }
 
     public void remember(ItemStack item) {
-        if (!(CodeClient.location instanceof Dev)
-                || item.getNbt() == null
-                || item.getNbt().get("PublicBukkitValues") == null
-                || item.getSubNbt("PublicBukkitValues").get("hypercube:varitem") == null) return;
+        DFItem dfItem = DFItem.of(item);
+        if (!(CodeClient.location instanceof Dev) || dfItem.getHypercubeStringValue("varitem").isEmpty()) return;
         for (ItemStack it : pinned) {
-            if (item.getItem() == it.getItem() && item.getNbt().equals(it.getNbt())) return;
+            if (item.getItem() == it.getItem() && item.equals(it)) return;
         }
 
         ItemStack lambdaItem = item;
-        recent.removeIf(it -> lambdaItem.getItem() == it.getItem() && lambdaItem.getNbt().equals(it.getNbt()));
+        recent.removeIf(it -> lambdaItem.getItem() == it.getItem() && lambdaItem.equals(it));
         item = item.copyWithCount(1);
         recent.add(0, item);
 
@@ -132,7 +130,7 @@ public class RecentValues extends Feature {
             if(recent.isEmpty() && pinned.isEmpty()) return;
             int xEnd = 16*15;
 
-            context.drawGuiTexture(new Identifier("recipe_book/overlay_recipe"), -screenX + 6, -5,
+            context.drawGuiTexture(RenderLayer::getGuiTextured, Identifier.ofVanilla("recipe_book/overlay_recipe"), -screenX + 6, -5,
                     Math.min(Math.max(pinned.size(), recent.size()),16) * 15 + 10,
                     (((int) Math.ceil((double) pinned.size() / 16)) + ((int) Math.ceil((double) recent.size() / 16))) * 16 + 10
             );
@@ -144,7 +142,7 @@ public class RecentValues extends Feature {
                 int x = 10;
                 for (ItemStack item : group) {
                     context.drawItem(item, x - screenX, y - screenY);
-                    context.drawItemInSlot(CodeClient.MC.textRenderer, item, x - screenX, y - screenY);
+                    context.drawStackOverlay(CodeClient.MC.textRenderer, item, x - screenX, y - screenY);
                     if (mouseX > x && mouseY > y && mouseX < x + 15 && mouseY < y + 15) {
                         context.drawItemTooltip(CodeClient.MC.textRenderer, item, mouseX - screenX, mouseY - screenY);
                         hoveredItem = item;
