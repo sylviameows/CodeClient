@@ -1,13 +1,13 @@
 package dev.dfonline.codeclient.mixin;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.dfonline.codeclient.CodeClient;
 import dev.dfonline.codeclient.config.KeyBinds;
-import dev.dfonline.codeclient.location.Creator;
-import dev.dfonline.codeclient.location.Plot;
-import dev.dfonline.codeclient.location.Spawn;
 import dev.dfonline.codeclient.switcher.SpeedSwitcher;
 import dev.dfonline.codeclient.switcher.StateSwitcher;
 import net.minecraft.client.Keyboard;
+import net.minecraft.client.gui.screen.Screen;
 import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -28,16 +28,16 @@ public class MKeyboard {
     @Inject(method = "processF3", at = @At("HEAD"), cancellable = true)
     private void handleF3(int key, CallbackInfoReturnable<Boolean> cir) {
         if (key == stateSwitcherKey) {
-            if (CodeClient.location instanceof Plot) {
-                CodeClient.MC.setScreen(new StateSwitcher());
-                cir.setReturnValue(true);
-            }
+            if (
+                    CodeClient.getFeature(StateSwitcher.StateSwitcherFeature.class)
+                            .map(StateSwitcher.StateSwitcherFeature::open)
+                            .orElse(false)) cir.setReturnValue(true);
         }
         if (key == speedSwitcherKey) {
-            if (CodeClient.location instanceof Creator || CodeClient.location instanceof Spawn) {
-                CodeClient.MC.setScreen(new SpeedSwitcher());
-                cir.setReturnValue(true);
-            }
+            if(
+                    CodeClient.getFeature(SpeedSwitcher.SpeedSwitcherFeature.class)
+                            .map(SpeedSwitcher.SpeedSwitcherFeature::open)
+                            .orElse(false)) cir.setReturnValue(false);
         }
     }
 
@@ -47,5 +47,10 @@ public class MKeyboard {
             // 1 = press, 2 = repeat, 0 = release
             CodeClient.isPreviewingItemTags = action == 1 || action == 2;
         }
+    }
+
+    @WrapOperation(method = "onChar", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/screen/Screen;charTyped(CI)Z"))
+    private boolean onChar(Screen instance, char chr, int modifiers, Operation<Boolean> original) {
+        return CodeClient.onCharTyped(chr, modifiers) || original.call(instance, chr, modifiers);
     }
 }

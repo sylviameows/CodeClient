@@ -1,6 +1,8 @@
 package dev.dfonline.codeclient;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import dev.dfonline.codeclient.action.Action;
 import dev.dfonline.codeclient.action.None;
 import dev.dfonline.codeclient.action.impl.DevForBuild;
@@ -25,6 +27,8 @@ import dev.dfonline.codeclient.dev.overlay.CPUDisplay;
 import dev.dfonline.codeclient.dev.overlay.ChestPeeker;
 import dev.dfonline.codeclient.hypercube.actiondump.ActionDump;
 import dev.dfonline.codeclient.location.*;
+import dev.dfonline.codeclient.switcher.ScopeSwitcher;
+import dev.dfonline.codeclient.switcher.SpeedSwitcher;
 import dev.dfonline.codeclient.switcher.StateSwitcher;
 import dev.dfonline.codeclient.websocket.SocketHandler;
 import net.fabricmc.api.ClientModInitializer;
@@ -33,6 +37,9 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.fabric.api.resource.ResourcePackActivationType;
 import net.fabricmc.loader.api.FabricLoader;
@@ -56,7 +63,6 @@ import net.minecraft.network.packet.s2c.play.BundleS2CPacket;
 import net.minecraft.network.packet.s2c.play.CloseScreenS2CPacket;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
@@ -66,6 +72,11 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.URI;
+import java.nio.channels.Channels;
+import java.nio.channels.ReadableByteChannel;
 import java.util.ConcurrentModificationException;
 import java.util.HashMap;
 import java.util.Objects;
@@ -80,6 +91,7 @@ public class CodeClient implements ClientModInitializer {
     public static MinecraftClient MC = MinecraftClient.getInstance();
 
     public static AutoJoin autoJoin = AutoJoin.NONE;
+    public static Utility.Toast startupToast;
 
     @NotNull
     public static Action currentAction = new None();
@@ -146,18 +158,31 @@ public class CodeClient implements ClientModInitializer {
                     DataValue element = publicBukkit.getHypercubeValue(key);
 
                     // Any type = yellow, number = red, string = aqua.
-                    MutableText value = Text.literal(publicBukkit.getHypercubeStringValue(key)).formatted(Formatting.GREEN);
-                    if (element instanceof StringDataValue) value.formatted(Formatting.AQUA);
-                    if (element instanceof NumberDataValue) value.formatted(Formatting.RED);
+                    Formatting formatting = Formatting.GREEN;
+                    String stringElement = element.getValue() == null ? "?" : element.getValue().toString();
+                    if (element instanceof StringDataValue) {
+                        formatting = Formatting.AQUA;
+                    }
+                    if (element instanceof NumberDataValue numberDataValue) {
+                        formatting = Formatting.RED;
+                        stringElement = String.valueOf(numberDataValue.getValue());
+                    }
 
                     lines.add(
                             Text.literal(key)
                                     .withColor(0xAAFF55)
                                     .append(Text.literal(" = ").formatted(Formatting.DARK_GRAY))
-                                    .append(value)
+                                    .append(Text.literal(stringElement).formatted(formatting))
                     );
                 }
             }
+        });
+
+        ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
+            ScreenKeyboardEvents.allowKeyPress(screen).register((screen1, key, scancode, modifiers) -> !CodeClient.onKeyPressed(key, scancode, modifiers));
+            ScreenKeyboardEvents.allowKeyRelease(screen).register((screen1, key, scancode, modifiers) -> !CodeClient.onKeyReleased(key, scancode,  modifiers));
+            ScreenMouseEvents.allowMouseClick(screen).register((screen1, mouseX, mouseY, button) -> !CodeClient.onMouseClicked(mouseX, mouseY, button));
+            ScreenMouseEvents.allowMouseScroll(screen).register((screen1, mouseX, mouseY, horizontalAmount, verticalAmount) -> !CodeClient.onMouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount));
         });
 
         try {
@@ -193,6 +218,10 @@ public class CodeClient implements ClientModInitializer {
         feat(new CPUDisplay());
         feat(new MessageHiding());
         feat(new ExpressionHighlighter());
+        feat(new PreviewSoundChest());
+        feat(new StateSwitcher.StateSwitcherFeature());
+        feat(new SpeedSwitcher.SpeedSwitcherFeature());
+        feat(new ScopeSwitcher.ScopeSwitcherFeature());
     }
 
     /**
@@ -481,6 +510,40 @@ public class CodeClient implements ClientModInitializer {
                 getModContainer(),
                 Text.literal(prefix).formatted(Formatting.GRAY).append(name),
                 type
+        );
+    }
+
+    public static void parseVersionInfo(String response) {
+        JsonObject json = JsonParser.parseString(response).getAsJsonObject();
+
+        var versionNumber = json.get("version_number").getAsString();
+
+        if (Config.getConfig().AutoUpdateOption != Config.AutoUpdate.UPDATE) {
+            startupToast = new Utility.Toast(Text.translatable("toast.codeclient.update_available.title", versionNumber), Text.translatable("toast.codeclient.update_available"));
+            return;
+        }
+        var files = json.getAsJsonArray("files");
+        files.forEach(file -> {
+                    var fileObject = file.getAsJsonObject();
+                    if (fileObject.get("primary").getAsBoolean()) {
+                        var url = fileObject.get("url").getAsString();
+                        LOGGER.info("Updated mod URL: {}", url);
+                        // Download the file.
+                        try (
+                                InputStream inputStream = new URI(url).toURL().openStream();
+                                ReadableByteChannel rbc = Channels.newChannel(inputStream);
+                                FileOutputStream fos = new FileOutputStream("mods/" + CodeClient.MOD_NAME + "-" + versionNumber + ".jar")
+                        ) {
+                            LOGGER.info("Starting download...");
+                            fos.getChannel().transferFrom(rbc, 0, Long.MAX_VALUE);
+                        } catch (Exception e) {
+                            LOGGER.error("Failed to download the file: {}", e.getMessage());
+                        } finally {
+                            LOGGER.info("Download complete.");
+                            startupToast = new Utility.Toast(Text.translatable("toast.codeclient.update.title", versionNumber), Text.translatable("toast.codeclient.update"));
+                        }
+                    }
+                }
         );
     }
 

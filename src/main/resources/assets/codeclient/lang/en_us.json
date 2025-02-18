@@ -1,10 +1,15 @@
 {
+  "toast.codeclient.update.title":  "CodeClient was updated to %s",
+  "toast.codeclient.update":  "Restart to apply.",
+  "toast.codeclient.update_available.title": "CodeClient Update: %s",
+  "toast.codeclient.update_available": "New version available",
   "category.codeclient.dev": "CodeClient",
   "key.codeclient.codepalette": "Code Palette",
   "key.codeclient.phaser": "Phaser",
   "key.codeclient.preview_item_tags": "Preview Item Tags",
   "key.codeclient.playDev": "Toggle Mode Play <-> Dev",
   "key.codeclient.playBuild": "Toggle Mode Play <-> Build",
+  "key.codeclient.preview_sounds": "Preview Sounds In Code Chest",
 
   "category.codeclient.navigation": "Code Navigation",
   "key.codeclient.tp.left": "Teleport Left",
@@ -25,6 +30,8 @@
   "codeclient.config.tab.general": "General",
   "codeclient.config.tab.general.tooltip": "General always specific options for CodeClient.",
 
+  "codeclient.config.auto_update": "Auto Update",
+  "codeclient.config.auto_update.description": "Whether CodeClient should check for updates, and whether it should update or notify.",
   "codeclient.config.api": "CodeClient API",
   "codeclient.config.api.description": "Allows external apps to add code to your plot.",
   "codeclient.config.read_charset": "Read Charset",
@@ -105,6 +112,10 @@
   "codeclient.config.pick_block_action.description3": "Click to open link.",
   "codeclient.config.recent_values": "Recent Values",
   "codeclient.config.recent_values.description": "Amount of recently used values to remember.",
+  "codeclient.config.state_switcher": "Mode Switcher",
+  "codeclient.config.state_switcher.description": "Using F3+F4 will cycle plot /modes instead of minecraft gamemodes.",
+  "codeclient.config.speed_switcher": "Speed Switcher",
+  "codeclient.config.speed_switcher.description": "Using F3+F5 will cycle different flyspeeds.",
 
   "codeclient.config.tab.visual": "Visual",
   "codeclient.config.tab.visual.description": "Purely visual elements of CodeClient, which can help in coding with information.",
@@ -204,6 +215,7 @@
   "codeclient.phaser.dev_mode1": "You cannot use phaser in build mode since %s to teleport.",
   "codeclient.phaser.dev_mode2": "it uses location items",
 
+  "codeclient.peeker.not_ready": "Didn't fetch items yet",
   "codeclient.peeker.empty": "Empty",
   "codeclient.peeker.contents": "Contents",
 
